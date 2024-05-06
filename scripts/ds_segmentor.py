@@ -4,7 +4,7 @@ import click
 
 @click.command(help="Segmentor for .ds file")
 @click.argument("input_path", required=True)
-@click.option("--retime", default=True, help="Retime segment's offset to 1")
+@click.option("--retime", default=True, help="Retime segment's offset to 0.5 second")
 @click.option("--export_path", default="segmented_files", help="Path to the folder where segmented files will be saved")
 
 def main(input_path, retime, export_path):
@@ -26,7 +26,7 @@ def process_ds(file_path, retime, export_path):
 
     for index, segment in enumerate(content_list):
         if retime:
-            segment["offset"] = 1
+            segment["offset"] = 0.5
         exp_name = f"{file_name}_seg_{index + 1}.ds"
         exp_path = os.path.join(export_path, exp_name)
         ds_segment = [segment] if not isinstance(segment, list) else segment
