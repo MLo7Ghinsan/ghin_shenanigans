@@ -3,18 +3,18 @@ import os
 import click
 
 @click.command(help="Segmentor for .ds file")
-@click.option("--input", required=True, help="Path to the input ds file or path to folder for batch segmentation")
+@click.argument("input_path", required=True, help="Path to the input ds file or path to folder for batch segmentation")
 @click.option("--retime", default=True, help="Retime segment's offset to 1")
 @click.option("--export_path", default="segmented_files", help="Path to the folder where segmented files will be saved")
 
-def main(input, retime, export_path):
-    if os.path.isdir(input):
-        files = [f for f in os.listdir(input) if f.endswith(".ds")]
+def main(input_path, retime, export_path):
+    if os.path.isdir(input_path):
+        files = [f for f in os.listdir(input_path) if f.endswith(".ds")]
         for file_name in files:
-            file_path = os.path.join(input, file_name)
+            file_path = os.path.join(input_path, file_name)
             process_ds(file_path, retime, export_path)
     else:
-        process_ds(input, retime, export_path)
+        process_ds(input_path, retime, export_path)
 
 def process_ds(file_path, retime, export_path):
     if not os.path.exists(export_path):
