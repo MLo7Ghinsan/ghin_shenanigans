@@ -3,7 +3,7 @@ import os
 import click
 
 @click.command(help="Segmentor for .ds file")
-@click.argument("input_path", required=True, help="Path to the input ds file or path to folder for batch segmentation")
+@click.argument("input_path", required=True)
 @click.option("--retime", default=True, help="Retime segment's offset to 1")
 @click.option("--export_path", default="segmented_files", help="Path to the folder where segmented files will be saved")
 
