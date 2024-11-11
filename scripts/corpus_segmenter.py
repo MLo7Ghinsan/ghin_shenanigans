@@ -1,0 +1,195 @@
+import soundfile as sf
+import os
+import numpy as np
+
+pause_phonemes = ["pau", "sil", "SP"] # not including AP cus its... breath
+report_path = "report.txt"
+
+# i just found out about these and holy shit im using them they're so slay
+yellow = "\033[93m"
+cyan = "\033[96m"
+green = "\033[92m"
+reset = "\033[0m"
+
+print(f"{yellow}!!!~Welcome to Corpus Segmenter~!!!\n")
+print(f"{cyan}This is a little tool for segmenting your labeled corpus as the name suggest.\n")
+print(f"Supporting label format: HTK label (.lab)\n")
+print(f"The phonemes that will be accountable for silence phonemes accounted for segmentation are {green}{pause_phonemes}\n")
+print(f"{cyan}This tool will not segment exactly on the inputted maximum segment length,\n")
+print(f"the logic of segmenting is based on the closest silence phoneme to that value.{reset}\n")
+print("|\n")
+print("|\n")
+print("|\n")
+
+input_folder = input("Enter the path to the input folder: ")
+output_folder = input("Enter the path to the output folder: ")
+max_length_sec = float(input("Enter the maximum segment length in seconds: "))
+
+# slay information to write as txt later so ppl dont have to check it themselves <3
+total_segments = 0
+total_removed_segments = 0
+total_skipped_files = 0
+total_audio_duration = 0
+valid_segments_count = 0
+subfolder_reports = []
+
+def load_lab(file_path):
+    with open(file_path, "r") as file:
+        lines = file.readlines()
+    lab_data = []
+    for line in lines:
+        start, end, phoneme = line.strip().split()
+        lab_data.append((int(start), int(end), phoneme))
+    return lab_data
+
+def fade(audio_segment, sample_rate, pause_start, pause_end, fade_type = "in"):
+    pause_length = pause_end - pause_start
+    fade_half_length = pause_length // 2
+
+    if fade_type == "in":
+        audio_segment[pause_start:pause_start + fade_half_length] = 0
+        fade_in_samples = np.linspace(0, 1, pause_end - (pause_start + fade_half_length))
+        audio_segment[pause_start + fade_half_length:pause_end][:len(fade_in_samples)] *= fade_in_samples
+    elif fade_type == "out":
+        fade_out_samples = np.linspace(1, 0, pause_start + fade_half_length - pause_start)
+        audio_segment[pause_start:pause_start + fade_half_length][:len(fade_out_samples)] *= fade_out_samples
+        audio_segment[pause_start + fade_half_length:pause_end] = 0
+
+# fun part
+def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
+    global total_segments, total_removed_segments, total_audio_duration, valid_segments_count
+
+    audio, sample_rate = sf.read(wav_path)
+    max_samples = int(max_length_sec * sample_rate)
+    lab_data = load_lab(lab_path)
+
+    segments = []
+    current_segment = []
+    current_length = 0
+    segment_start_time = 0
+
+    for start, end, phoneme in lab_data:
+        duration = int((end - start) * sample_rate / 1e7)
+
+        if phoneme in pause_phonemes and current_length + duration >= max_samples:
+            if current_segment:
+                if current_segment[-1][2] not in pause_phonemes:
+                    current_segment.append((start, end, phoneme))
+            segments.append((segment_start_time, current_segment))
+
+            current_segment = [(start, end, phoneme)]
+            current_length = duration
+            segment_start_time = start
+        else:
+            current_segment.append((start, end, phoneme))
+            current_length += duration
+
+    if current_segment:
+        if current_segment[-1][2] != pause_phonemes:
+            current_segment.append(current_segment[-1])
+        segments.append((segment_start_time, current_segment))
+
+    base_filename = os.path.splitext(os.path.basename(wav_path))[0]
+    print(f"File '{base_filename}.wav|.lab' has been separated into {len(segments)} segments.")
+
+    for i, (segment_start_time, segment) in enumerate(segments):
+        seg_start_sample = int(segment[0][0] * sample_rate / 1e7)
+        seg_end_sample = int(segment[-1][1] * sample_rate / 1e7)
+        
+        segment_audio = np.copy(audio[seg_start_sample:seg_end_sample])
+
+        # doing fade in-out to prevent the choking sound in silence phonemes- you are WELCOME
+        if segment[0][2] in pause_phonemes:
+            first_pause_start = int((segment[0][0] - segment_start_time) * sample_rate / 1e7)
+            first_pause_end = int((segment[0][1] - segment_start_time) * sample_rate / 1e7)
+            fade(segment_audio, sample_rate, first_pause_start, first_pause_end, fade_type = "in")
+        
+        if segment[-1][2] in pause_phonemes:
+            last_pause_start = int((segment[-1][0] - segment_start_time) * sample_rate / 1e7)
+            last_pause_end = int((segment[-1][1] - segment_start_time) * sample_rate / 1e7)
+            fade(segment_audio, sample_rate, last_pause_start, last_pause_end, fade_type = "out")
+
+        seg_wav_path = os.path.join(output_folder, f"{base_filename}_seg{i+1}.wav")
+        sf.write(seg_wav_path, segment_audio, sample_rate)
+        
+        seg_lab_path = os.path.join(output_folder, f"{base_filename}_seg{i+1}.lab")
+        with open(seg_lab_path, 'w') as seg_lab_file:
+            for start, end, phoneme in segment:
+                new_start = start - segment_start_time
+                new_end = end - segment_start_time
+                seg_lab_file.write(f"{new_start} {new_end} {phoneme}\n")
+
+        total_segments += 1
+        segment_duration = len(segment_audio) / sample_rate
+        total_audio_duration += segment_duration
+        valid_segments_count += 1
+
+    removed_segments = 0
+    for i in range(1, len(segments) + 1):
+        seg_lab_path = os.path.join(output_folder, f"{base_filename}_seg{i}.lab")
+        seg_wav_path = os.path.join(output_folder, f"{base_filename}_seg{i}.wav")
+        segment_data = load_lab(seg_lab_path)
+        
+        if all(phoneme in pause_phonemes for _, _, phoneme in segment_data):
+            os.remove(seg_lab_path)
+            os.remove(seg_wav_path)
+            total_removed_segments += 1
+            removed_segments += 1
+            valid_segments_count -= 1
+            print(f"Removed segment {i} with only pause phoneme for '{base_filename}.wav|.lab'.")
+
+# for both folders and wav|lab that are in the folder
+def process_folder(input_folder, output_folder, max_length_sec, report_path):
+    os.makedirs(output_folder, exist_ok=True)
+    
+    global total_skipped_files, subfolder_reports
+    for root, dirs, files in os.walk(input_folder):
+        relative_path = os.path.relpath(root, input_folder)
+        output_subfolder = os.path.join(output_folder, relative_path)
+        os.makedirs(output_subfolder, exist_ok=True)
+        base_filenames = set(os.path.splitext(filename)[0] for filename in files if filename.endswith(".wav") or filename.endswith(".lab"))
+
+        folder_segments = 0
+        folder_removed_segments = 0
+        skipped_count = 0
+
+        for base_filename in base_filenames:
+            wav_path = os.path.join(root, f"{base_filename}.wav")
+            lab_path = os.path.join(root, f"{base_filename}.lab")
+            
+            if not os.path.exists(wav_path) or not os.path.exists(lab_path):
+                skipped_count += 1
+                total_skipped_files += 1
+                print(f"No equivalent file to {base_filename}.wav|.lab, skipping it....")
+                continue
+
+            segments_before = total_segments
+            segment_audio_and_labels(wav_path, lab_path, output_subfolder, max_length_sec)
+            folder_segments += total_segments - segments_before
+            folder_removed_segments = total_removed_segments
+
+        subfolder_reports.append({
+            "folder": relative_path,
+            "segments_created": folder_segments,
+            "segments_removed": folder_removed_segments,
+            "files_skipped": skipped_count
+        })
+
+    # Write the report as before
+    with open(report_path, "w") as report_file:
+        for report in subfolder_reports:
+            report_file.write(f"Folder: {report['folder']}\n")
+            report_file.write(f"  Segments created: {report['segments_created']}\n")
+            report_file.write(f"  Segments removed: {report['segments_removed']}\n")
+            report_file.write(f"  Files skipped: {report['files_skipped']}\n\n")
+            
+        report_file.write(f"Total segments created: {total_segments}\n")
+        report_file.write(f"Total removed segments: {total_removed_segments}\n")
+        report_file.write(f"Total valid segments: {valid_segments_count}\n")
+        report_file.write(f"Total skipped files: {total_skipped_files}\n")
+        report_file.write(f"Total audio duration of valid segments: {int(total_audio_duration)} seconds\n")
+
+    print(f"Segmentation complete! Saved report as {report_path}")
+
+
+process_folder(input_folder, output_folder, max_length_sec, report_path)
