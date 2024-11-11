@@ -24,3 +24,18 @@ python pitch_shift_w_lab_mult.py
 info:
 - prompt based
 - module(s): `soundfile praat-parselmouth numpy pyworld tqdm`
+___
+## corpus_segmenter.py
+
+### what it does:
+- segments your corpus to the nearest value of max segment length input while keeping the first and last phoneme as the pause phoneme(s)
+- adds silence and fade in/out to the first/last pause phoneme
+- remove segments that only contains pause phoneme(s)
+- print out report information
+
+```
+python corpus_segmenter.py
+```
+info:
+- prompt based
+- module(s): `soundfile numpy`
