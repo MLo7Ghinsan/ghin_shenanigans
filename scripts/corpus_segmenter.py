@@ -42,18 +42,39 @@ def load_lab(file_path):
         lab_data.append((int(start), int(end), phoneme))
     return lab_data
 
-def fade(audio_segment, sample_rate, pause_start, pause_end, fade_type = "in"):
+def fade(audio_segment, sample_rate, pause_start, pause_end, fade_type="in"):
     pause_length = pause_end - pause_start
     fade_half_length = pause_length // 2
+
+    if pause_length <= 0 or fade_half_length <= 0:
+        return
 
     if fade_type == "in":
         audio_segment[pause_start:pause_start + fade_half_length] = 0
         fade_in_samples = np.linspace(0, 1, pause_end - (pause_start + fade_half_length))
-        audio_segment[pause_start + fade_half_length:pause_end][:len(fade_in_samples)] *= fade_in_samples
+        target_length = min(len(audio_segment[pause_start + fade_half_length:pause_end]), len(fade_in_samples))
+        audio_segment[pause_start + fade_half_length:pause_start + fade_half_length + target_length] *= fade_in_samples[:target_length]
     elif fade_type == "out":
-        fade_out_samples = np.linspace(1, 0, pause_start + fade_half_length - pause_start)
-        audio_segment[pause_start:pause_start + fade_half_length][:len(fade_out_samples)] *= fade_out_samples
+        fade_out_samples = np.linspace(1, 0, fade_half_length)
+        target_length = min(len(audio_segment[pause_start:pause_start + fade_half_length]), len(fade_out_samples))
+        audio_segment[pause_start:pause_start + target_length] *= fade_out_samples[:target_length]
         audio_segment[pause_start + fade_half_length:pause_end] = 0
+
+# to check for longest audio cus sometimes it'd be too long
+def find_longest_seg(folder_path):
+    longest_file = None
+    longest_duration = 0
+
+    for file in os.listdir(folder_path):
+        if file.endswith(".wav"):
+            file_path = os.path.join(folder_path, file)
+            audio, sample_rate = sf.read(file_path)
+            duration = len(audio) / sample_rate
+            if duration > longest_duration:
+                longest_duration = duration
+                longest_file = file_path
+
+    return longest_file, longest_duration
 
 # fun part
 def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
@@ -93,8 +114,13 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
     print(f"File '{base_filename}.wav|.lab' has been separated into {len(segments)} segments.")
 
     for i, (segment_start_time, segment) in enumerate(segments):
+
+        if not segment:
+            continue
+
         seg_start_sample = int(segment[0][0] * sample_rate / 1e7)
         seg_end_sample = int(segment[-1][1] * sample_rate / 1e7)
+        seg_end_sample = min(seg_end_sample, len(audio))
         
         segment_audio = np.copy(audio[seg_start_sample:seg_end_sample])
 
@@ -112,8 +138,8 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
         seg_wav_path = os.path.join(output_folder, f"{base_filename}_seg{i+1}.wav")
         sf.write(seg_wav_path, segment_audio, sample_rate)
         
-        seg_lab_path = os.path.join(output_folder, f"{base_filename}_seg{i+1}.lab")
-        with open(seg_lab_path, 'w') as seg_lab_file:
+        seg_lab_path = os.path.abspath(os.path.join(output_folder, f"{base_filename}_seg{i+1}.lab"))
+        with open(seg_lab_path, "w") as seg_lab_file:
             for start, end, phoneme in segment:
                 new_start = start - segment_start_time
                 new_end = end - segment_start_time
@@ -128,6 +154,8 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
     for i in range(1, len(segments) + 1):
         seg_lab_path = os.path.join(output_folder, f"{base_filename}_seg{i}.lab")
         seg_wav_path = os.path.join(output_folder, f"{base_filename}_seg{i}.wav")
+        if not os.path.exists(seg_lab_path):
+            continue
         segment_data = load_lab(seg_lab_path)
         
         if all(phoneme in pause_phonemes for _, _, phoneme in segment_data):
@@ -145,6 +173,8 @@ def process_folder(input_folder, output_folder, max_length_sec, report_path):
     global total_skipped_files, subfolder_reports
     for root, dirs, files in os.walk(input_folder):
         relative_path = os.path.relpath(root, input_folder)
+        if relative_path == ".":
+            relative_path = ""
         output_subfolder = os.path.join(output_folder, relative_path)
         os.makedirs(output_subfolder, exist_ok=True)
         base_filenames = set(os.path.splitext(filename)[0] for filename in files if filename.endswith(".wav") or filename.endswith(".lab"))
@@ -168,20 +198,25 @@ def process_folder(input_folder, output_folder, max_length_sec, report_path):
             folder_segments += total_segments - segments_before
             folder_removed_segments = total_removed_segments
 
+        longest_segment_file, longest_segment_duration = find_longest_seg(output_subfolder)
+
         subfolder_reports.append({
             "folder": relative_path,
             "segments_created": folder_segments,
             "segments_removed": folder_removed_segments,
-            "files_skipped": skipped_count
+            "files_skipped": skipped_count,
+            "longest_audio_file": longest_segment_file,
+            "longest_audio_duration": longest_segment_duration
         })
 
-    # Write the report as before
     with open(report_path, "w") as report_file:
         for report in subfolder_reports:
             report_file.write(f"Folder: {report['folder']}\n")
             report_file.write(f"  Segments created: {report['segments_created']}\n")
             report_file.write(f"  Segments removed: {report['segments_removed']}\n")
-            report_file.write(f"  Files skipped: {report['files_skipped']}\n\n")
+            report_file.write(f"  Files skipped: {report['files_skipped']}\n")
+            report_file.write(f"  Longest audio file: {report['longest_audio_file']}\n")
+            report_file.write(f"  Duration of longest audio file: {int(report['longest_audio_duration'])} seconds\n\n")
             
         report_file.write(f"Total segments created: {total_segments}\n")
         report_file.write(f"Total removed segments: {total_removed_segments}\n")
