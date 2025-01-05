@@ -2,7 +2,9 @@ import soundfile as sf
 import os
 import numpy as np
 
-pause_phonemes = ["pau", "sil", "SP"] # not including AP cus its... breath
+pause_phonemes = ["pau", "sil", "SP"]
+breath_phonemes = ["AP", "bre"]
+all_pause_phonemes = pause_phonemes + breath_phonemes
 report_path = "report.txt"
 
 # i just found out about these and holy shit im using them they're so slay
@@ -14,9 +16,10 @@ reset = "\033[0m"
 print(f"{yellow}!!!~Welcome to Corpus Segmenter~!!!\n")
 print(f"{cyan}This is a little tool for segmenting your labeled corpus as the name suggest.\n")
 print(f"Supporting label format: HTK label (.lab)\n")
-print(f"The phonemes that will be accountable for silence phonemes accounted for segmentation are {green}{pause_phonemes}\n")
+print(f"The phonemes that will be accountable for {green}silence {cyan}phonemes accounted for segmentation are {green}{pause_phonemes}\n")
+print(f"{cyan}The phonemes that will be accountable for {green}breath {cyan}phonemes accounted for segmentation are {green}{breath_phonemes}\n")
 print(f"{cyan}This tool will not segment exactly on the inputted maximum segment length,\n")
-print(f"the logic of segmenting is based on the closest silence phoneme to that value.{reset}\n")
+print(f"the logic of segmenting is based on the closest {green}silence and breath {cyan}phoneme to that value.{reset}\n")
 print("|\n")
 print("|\n")
 print("|\n")
@@ -31,6 +34,7 @@ total_removed_segments = 0
 total_skipped_files = 0
 total_audio_duration = 0
 valid_segments_count = 0
+max_silence_length = 0.25
 subfolder_reports = []
 
 def load_lab(file_path):
@@ -92,9 +96,9 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
     for start, end, phoneme in lab_data:
         duration = int((end - start) * sample_rate / 1e7)
 
-        if phoneme in pause_phonemes and current_length + duration >= max_samples:
+        if phoneme in all_pause_phonemes and current_length + duration >= max_samples:
             if current_segment:
-                if current_segment[-1][2] not in pause_phonemes:
+                if current_segment[-1][2] not in all_pause_phonemes:
                     current_segment.append((start, end, phoneme))
             segments.append((segment_start_time, current_segment))
 
@@ -106,7 +110,7 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
             current_length += duration
 
     if current_segment:
-        if current_segment[-1][2] != pause_phonemes:
+        if current_segment[-1][2] != all_pause_phonemes:
             current_segment.append(current_segment[-1])
         segments.append((segment_start_time, current_segment))
 
@@ -118,22 +122,70 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
         if not segment:
             continue
 
-        seg_start_sample = int(segment[0][0] * sample_rate / 1e7)
-        seg_end_sample = int(segment[-1][1] * sample_rate / 1e7)
+        # for trimming silence
+        first_p_start, first_p_end, first_p_phn = segment[0]
+        first_p_dur_s = (first_p_end - first_p_start) / 1e7
+        if first_p_phn in pause_phonemes and first_p_dur_s > max_silence_length:
+            new_start = first_p_end - int(max_silence_length * 1e7)
+            segment[0] = (new_start, first_p_end, first_p_phn)
+
+        last_p_start, last_p_end, last_p_phn = segment[-1]
+        last_p_dur_s = (last_p_end - last_p_start) / 1e7
+        if last_p_phn in pause_phonemes and last_p_dur_s > max_silence_length:
+            new_end = last_p_start + int(max_silence_length * 1e7)
+            segment[-1] = (last_p_start, new_end, last_p_phn)
+
+        new_seg_start_time = segment[0][0]
+        new_seg_end_time = segment[-1][1]
+
+        seg_start_sample = int(new_seg_start_time * sample_rate / 1e7)
+        seg_end_sample = int(new_seg_end_time * sample_rate / 1e7)
         seg_end_sample = min(seg_end_sample, len(audio))
         
         segment_audio = np.copy(audio[seg_start_sample:seg_end_sample])
 
         # doing fade in-out to prevent the choking sound in silence phonemes- you are WELCOME
+        # doing 0.1 (10%) on fade amount for breath to not reduce too much details....
+        segment_start_time = new_seg_start_time
+        
         if segment[0][2] in pause_phonemes:
             first_pause_start = int((segment[0][0] - segment_start_time) * sample_rate / 1e7)
             first_pause_end = int((segment[0][1] - segment_start_time) * sample_rate / 1e7)
             fade(segment_audio, sample_rate, first_pause_start, first_pause_end, fade_type = "in")
-        
+        elif segment[0][2] in breath_phonemes:
+            first_breath_start = int((segment[0][0] - segment_start_time) * sample_rate / 1e7)
+            first_breath_end = int((segment[0][1] - segment_start_time) * sample_rate / 1e7)
+            breath_length = first_breath_end - first_breath_start
+            fade_length = int(0.1 * breath_length)
+            fade(segment_audio, sample_rate, first_breath_start, first_breath_start + fade_length, fade_type="in")
+
         if segment[-1][2] in pause_phonemes:
             last_pause_start = int((segment[-1][0] - segment_start_time) * sample_rate / 1e7)
             last_pause_end = int((segment[-1][1] - segment_start_time) * sample_rate / 1e7)
             fade(segment_audio, sample_rate, last_pause_start, last_pause_end, fade_type = "out")
+        elif segment[-1][2] in breath_phonemes:
+            last_breath_start = int((segment[-1][0] - segment_start_time) * sample_rate / 1e7)
+            last_breath_end = int((segment[-1][1] - segment_start_time) * sample_rate / 1e7)
+            breath_length = last_breath_end - last_breath_start
+            fade_length = int(0.1 * breath_length)
+            fade(segment_audio, sample_rate, last_breath_end - fade_length, last_breath_end, fade_type="out")
+
+        #adding SP to the start and end if its breath phoneme
+        silence_samples = int(max_silence_length * sample_rate)
+        silence_audio = np.zeros(silence_samples, dtype=audio.dtype)
+
+        if segment[0][2] in breath_phonemes:
+            segment_audio = np.concatenate((silence_audio, segment_audio))
+            for j in range(len(segment)):
+                start, end, phoneme = segment[j]
+                segment[j] = (start + int(max_silence_length * 1e7), end + int(max_silence_length * 1e7), phoneme)
+            new_first = (segment_start_time, segment_start_time + int(max_silence_length * 1e7), "SP")
+            segment.insert(0, new_first)
+
+        if segment[-1][2] in breath_phonemes:
+            segment_audio = np.concatenate((segment_audio, silence_audio))
+            new_last = (segment[-1][1], segment[-1][1] + int(max_silence_length * 1e7), "SP")
+            segment.append(new_last)
 
         seg_wav_path = os.path.join(output_folder, f"{base_filename}_seg{i+1}.wav")
         sf.write(seg_wav_path, segment_audio, sample_rate)
@@ -158,7 +210,7 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
             continue
         segment_data = load_lab(seg_lab_path)
         
-        if all(phoneme in pause_phonemes for _, _, phoneme in segment_data):
+        if all(phoneme in all_pause_phonemes for _, _, phoneme in segment_data):
             os.remove(seg_lab_path)
             os.remove(seg_wav_path)
             total_removed_segments += 1
