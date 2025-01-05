@@ -52,7 +52,10 @@ def fade(audio_segment, sample_rate, pause_start, pause_end, fade_type="in"):
 
     if pause_length <= 0 or fade_half_length <= 0:
         return
-
+        
+    if pause_start < 0 or pause_end > len(audio_segment):
+        return
+        
     if fade_type == "in":
         audio_segment[pause_start:pause_start + fade_half_length] = 0
         fade_in_samples = np.linspace(0, 1, pause_end - (pause_start + fade_half_length))
