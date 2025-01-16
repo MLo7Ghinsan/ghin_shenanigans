@@ -24,10 +24,11 @@ def process_ds(file_path, retime, export_path):
         content_list = [content] if not isinstance(content, list) else content
     file_name, _ = os.path.splitext(os.path.basename(file_path))
 
+    digits=len(str(len(content_list)+1))
     for index, segment in enumerate(content_list):
         if retime:
             segment["offset"] = 0.5
-        exp_name = f"{file_name}_seg_{index + 1}.ds"
+        exp_name = f"{file_name}_seg_{str(index + 1).zfill(digits)}.ds"
         exp_path = os.path.join(export_path, exp_name)
         ds_segment = [segment] if not isinstance(segment, list) else segment
         with open(exp_path, "w", encoding="utf-8") as file:
