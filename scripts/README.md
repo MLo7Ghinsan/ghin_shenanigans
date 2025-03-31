@@ -44,6 +44,7 @@ ___
 
 ### what it does:
 - export OpenUtau voicebank from input acoustic and variance onnx folder and their contents
+- does not work with single speaker (yet), might not work with single dict (yet) either
 
 ```
 python voicebank_exporter.py [acoustic_onnx_folder] [variance_onnx_folder] [options]
