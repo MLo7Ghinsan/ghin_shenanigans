@@ -189,7 +189,14 @@ def segment_audio_and_labels(wav_path, lab_path, output_folder, max_length_sec):
             segment_audio = np.concatenate((segment_audio, silence_audio))
             new_last = (segment[-1][1], segment[-1][1] + int(max_silence_length * 1e7), "SP")
             segment.append(new_last)
-
+            
+        cleaned_segment = []
+        for i, ph in enumerate(segment):
+            if i > 0 and ph[2] == "SP" and segment[i - 1][2] == "SP" and ph[0] == segment[i - 1][0] and ph[1] == segment[i - 1][1]:
+                continue  # skip duplicate
+            cleaned_segment.append(ph)
+        segment = cleaned_segment
+        
         seg_wav_path = os.path.join(output_folder, f"{base_filename}_seg{i+1}.wav")
         sf.write(seg_wav_path, segment_audio, sample_rate)
         
