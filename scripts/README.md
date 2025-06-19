@@ -54,3 +54,16 @@ info:
 - option: `--name` | name of your speaker | default: my_diffsinger_vb
 - option: `--output` | path to the folder where the voicebank will be saved | default: output
 - module(s): `click PyYAML`
+___
+## breath2silence.py
+
+### what it does:
+- convert the labeled trailing breath at the end of the data to silence and merge then trim the end silence
+- highly recommended to be used after corpus_segmenter.py if user dislike trailing breath it duplicated
+
+```
+python breath2silence.py
+```
+info:
+- prompt based
+- module(s): `soundfile numpy`
