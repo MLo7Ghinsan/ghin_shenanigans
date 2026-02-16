@@ -13,20 +13,7 @@ cyan = "\033[96m"
 green = "\033[92m"
 reset = "\033[0m"
 
-print(f"{yellow}!!!~Welcome to Corpus Segmenter~!!!\n")
-print(f"{cyan}This is a little tool for segmenting your labeled corpus as the name suggest.\n")
-print(f"Supporting label format: HTK label (.lab)\n")
-print(f"The phonemes that will be accountable for {green}silence {cyan}phonemes accounted for segmentation are {green}{pause_phonemes}\n")
-print(f"{cyan}The phonemes that will be accountable for {green}breath {cyan}phonemes accounted for segmentation are {green}{breath_phonemes}\n")
-print(f"{cyan}This tool will not segment exactly on the inputted maximum segment length,\n")
-print(f"the logic of segmenting is based on the closest {green}silence and breath {cyan}phoneme to that value.{reset}\n")
-print("|\n")
-print("|\n")
-print("|\n")
 
-input_folder = input("Enter the path to the input folder: ")
-output_folder = input("Enter the path to the output folder: ")
-max_length_sec = float(input("Enter the maximum segment length in seconds: "))
 
 # slay information to write as txt later so ppl dont have to check it themselves <3
 total_segments = 0
@@ -289,4 +276,23 @@ def process_folder(input_folder, output_folder, max_length_sec, report_path):
     print(f"Segmentation complete! Saved report as {report_path}")
 
 
-process_folder(input_folder, output_folder, max_length_sec, report_path)
+
+def main():
+    print(f"{yellow}!!!~Welcome to Corpus Segmenter~!!!\n")
+    print(f"{cyan}This is a little tool for segmenting your labeled corpus as the name suggest.\n")
+    print(f"Supporting label format: HTK label (.lab)\n")
+    print(f"The phonemes that will be accountable for {green}silence {cyan}phonemes accounted for segmentation are {green}{pause_phonemes}\n")
+    print(f"{cyan}The phonemes that will be accountable for {green}breath {cyan}phonemes accounted for segmentation are {green}{breath_phonemes}\n")
+    print(f"{cyan}This tool will not segment exactly on the inputted maximum segment length,\n")
+    print(f"the logic of segmenting is based on the closest {green}silence and breath {cyan}phoneme to that value.{reset}\n")
+    print("|\n")
+    print("|\n")
+    print("|\n")
+    input_folder = input("Enter the path to the input folder: ")
+    output_folder = input("Enter the path to the output folder: ")
+    max_length_sec = float(input("Enter the maximum segment length in seconds: "))
+    
+    process_folder(input_folder, output_folder, max_length_sec, report_path)
+
+if __name__ == "__main__":
+    main()
